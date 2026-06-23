@@ -13,7 +13,7 @@ This file is the authoritative log of everything built, every decision made, and
 - **Expo SDK:** 56 (installed; brief says 51 but 56 is what ships — compatible)
 - **Expo Router:** v3 (file-based routing)
 - **TypeScript:** strict mode
-- **Supabase project:** `aaknvhlirztdglxsnbhu`
+- **Supabase project:** `aaknvhlirztdglxsnbho` (note: ends in `o`, not `u` — was wrong for a long time, fixed 2026-06-07)
 - **PostHog project:** 457365
 - **Design export:** `../iskra-claude-design-export/project/` (parent repo)
 - **Before building any screen:** read `../iskra-claude-design-export/project/screens/<Name>.jsx`
@@ -371,43 +371,64 @@ All 9 poriv screens, full production builds, 0 TypeScript errors:
 
 ---
 
-## Phase 8 — Paywall + RevenueCat (COMPLETE ✅)
+## Phase 8 — Paywall + RevenueCat (COMPLETE ✅, RC temporarily commented out)
 
 ### What was built
 
-- **`src/lib/revenuecat.ts`** — `configureRevenueCat(userId?)`, `identifyUser()`, `getOfferings()`, `purchasePackage()`, `restorePurchases()`, `syncPremiumToSupabase()`, `isEntitlementActive()`. API key: `test_bPeWvJlIOhmGgbcIBPHHtspjXPz`. Entitlement ID: `"ISKRA Club"`.
+- **`src/lib/revenuecat.ts`** — full helper library: `configureRevenueCat()`, `identifyUser()`, `getOfferings()`, `purchasePackage()`, `restorePurchases()`, `syncPremiumToSupabase()`, `isEntitlementActive()`. API key: `test_bPeWvJlIOhmGgbcIBPHHtspjXPz`. Entitlement ID: `"ISKRA Club"`. Products: monthly/yearly/lifetime.
 
-- **`src/hooks/useIsPremium.ts`** — checks `profile.is_premium` (from Supabase) OR live RC entitlement; returns boolean.
+- **`src/hooks/useIsPremium.ts`** — checks `profile.is_premium` OR live RC entitlement; returns boolean.
 
-- **`app/_layout.tsx`** — calls `configureRevenueCat(userId?)` on mount after session check. Also registers `settings` stack screen.
+- **`app/onboarding/paywall.tsx`** — paywall screen with 3 tiers (Mesečno 590 RSD / Godišnje 2.990 RSD / Doživotno 4.990 RSD), countdown timer, FAQ accordion, reviews. `completeOnboarding(snap, isPremium)` writes the full profile + `is_premium` flag in one upsert.
 
-- **`app/onboarding/paywall.tsx`** — full RC integration:
-  - Loads offerings on mount; maps packages to `mesecno/godisnje/dozivotno` by `PACKAGE_TYPE`
-  - `handleBuy()`: calls `purchasePackage(pkg)` → on active entitlement: `syncPremiumToSupabase()` → `completeOnboarding()` → home. USER_CANCELLED (code 1) silently ignored.
-  - `handleRestore()`: calls `restorePurchases()` → updates Supabase if active. Wired to "Obnovi kupovinu" legal link.
-  - `handleFree()`: skip purchase, just `completeOnboarding()` → home.
-  - Price strings from RC shown when available (fallback to hardcoded RSD values).
+- **`app/onboarding/name.tsx`** — creates anonymous Supabase auth session (`supabase.auth.signInAnonymously()`) silently when user taps "Nastavi". This ensures a session exists by the time paywall calls `completeOnboarding`.
 
-- **`app/(tabs)/saznaj.tsx`** — locked articles show Alert when tapped if `!isPremium`; Alert offers inline purchase flow via `getOfferings()` + `purchasePackage()`.
+### ⚠️ RevenueCat currently commented out (Expo Go limitation)
 
-### Critical pending step
+RC purchases work in Expo Go but were commented out to unblock testing. All RC code is in place with `// TODO: re-enable when building dev client` markers:
+- `app/onboarding/paywall.tsx` — RC imports commented, `handleBuy` calls `completeOnboarding` directly
+- `app/_layout.tsx` — `configureRevenueCat()` call commented out
+- `app/(tabs)/saznaj.tsx` — `useIsPremium` commented, locked articles show stub Alert
 
-**RLS fix still must be run manually** in Supabase SQL Editor (MCP permission denied):
-```sql
-drop policy if exists "own profile" on public.profiles;
-create policy "own profile"
-  on public.profiles
-  for all
-  using (auth.uid() = id)
-  with check (auth.uid() = id);
-```
+**To re-enable:** uncomment the marked lines in those 3 files + run `eas build --profile development --platform ios` for a dev client build.
 
-## Next Session Checklist (Phase 9+)
+---
 
-**Phase 9 — Notifications Edge Functions (COMPLETE ✅):**
-- `send-notification` and `schedule-notifications` deployed and ACTIVE
-- Project ID was wrong in `.env.local` (`aaknvhlirztdglxsnbhu` → `aaknvhlirztdglxsnbho`), now fixed
+## Phase 9 — Notifications Edge Functions (COMPLETE ✅)
 
-**Phase 10 — Widgets (iOS + Android)**
-**Phase 11 — Shareable Achievements**
-**Phase 12 — Polish + Analytics**
+- `send-notification` edge function deployed and ACTIVE — fetches push_token, calls Expo Push API
+- `schedule-notifications` edge function deployed and ACTIVE — 8am/9pm cron, gender-aware copy, computes streak
+- Both deployed via Supabase MCP to project `aaknvhlirztdglxsnbho`
+
+---
+
+## Infrastructure fixes applied this session (2026-06-07)
+
+- **Supabase project ID typo fixed** — `.env.local` had `aaknvhlirztdglxsnbhu` (ends `u`), correct is `aaknvhlirztdglxsnbho` (ends `o`). All DB calls were hitting nothing for the entire build.
+- **Full schema deployed** via MCP — all 5 tables live: `profiles`, `checkins`, `cravings`, `slips`, `milestones`. RLS policies include `with check` for INSERT (so anon key can create rows).
+- **Anonymous auth** — user signs in anonymously on `name.tsx` so session exists at paywall. Requires "Anonymous sign-ins" enabled in Supabase dashboard → Authentication → Sign In Methods.
+- **Settings submenus** — `app/settings/_layout.tsx`, `profil-edit.tsx`, `datum-edit.tsx`, `navike-edit.tsx` built. Profile tab rows navigate to these.
+- **Share cards** — `src/components/ShareCard.tsx` + `useShareCard()` hook. All PODELI buttons on money/cigarettes/time/milestoni wired.
+
+---
+
+## Next Session Checklist
+
+**Content (ready now):**
+- Replace stub articles in `saznaj.tsx` (`POPULAR`, `NEW_ARTICLES` arrays) with real written content
+- Replace stub quotes in `home/quote.tsx` with real quote list
+- Improve milestone `unlockText` copy for emotional resonance
+- Add more variety to notification copy in `schedule-notifications/index.ts`
+
+**Phase 10 — Widgets (iOS + Android)** — WidgetKit Swift + Kotlin Glance, App Groups data bridge
+
+**Phase 11 — Shareable Achievements** — already built (`src/components/ShareCard.tsx`), ✅ COMPLETE
+
+**Phase 12 — Polish + Analytics:**
+- PostHog event wiring (13 events, helpers in `src/lib/posthog.ts`)
+- Entrance animations / skeleton loading states
+- Gender-aware copy audit
+- Accessibility labels
+- Error/empty states
+
+**RevenueCat re-enable** — when doing dev client build, uncomment 3 files (see Phase 8 note above)
